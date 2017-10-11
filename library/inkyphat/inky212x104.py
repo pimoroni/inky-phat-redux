@@ -7,11 +7,6 @@ import time
 import atexit
 
 try:
-    import spidev
-except ImportError:
-    sys.exit("This library requires the spidev module\nInstall with: sudo pip install spidev")
-
-try:
     import RPi.GPIO as GPIO
 except ImportError:
     sys.exit("This library requires the RPi.GPIO module\nInstall with: sudo pip install RPi.GPIO")
@@ -21,12 +16,22 @@ try:
 except ImportError:
     sys.exit("This library requires the numpy module\nInstall with: sudo pip install numpy")
 
+RESET_PIN = 27
+BUSY_PIN = 17
+DC_PIN = 12
+
+MOSI_PIN = 10
+SCLK_PIN = 11
+CS0_PIN = 8
 
 GPIO.setmode(GPIO.BCM)
 GPIO.setwarnings(False)
 
 _SPI_COMMAND = GPIO.LOW
 _SPI_DATA = GPIO.HIGH
+
+
+_V2_RESET = 0x12
 
 _BOOSTER_SOFT_START = 0x06
 _POWER_SETTING = 0x01
@@ -54,12 +59,46 @@ WHITE = 0
 BLACK = 1
 RED = 2
 
+class InkySPI:
+    """Software SPI implementation
+    We require low-level control of the SPI pins so they can be
+    switched back to inputs, with no pull-up or down when unused.
+    This is to prevent the display driver powering itself
+    parasitically from these pins.
+    """
+    def __init__(self, mosi_pin, sclk_pin, cs_pin):
+        self.mosi_pin = mosi_pin
+        self.sclk_pin = sclk_pin
+        self.cs_pin = cs_pin
+        self._disable_gpio()
+
+    def _disable_gpio(self):
+        GPIO.setup((self.mosi_pin, self.sclk_pin, self.cs_pin), GPIO.IN, pull_up_down=GPIO.PUD_OFF)         
+
+    def xfer(self, values):
+        #print("Sending: {}".format(values))
+        GPIO.setup((self.mosi_pin, self.sclk_pin, self.cs_pin), GPIO.OUT)
+
+        for value in values:
+            for bit in range(8):
+                GPIO.output(MOSI_PIN, value & 0b10000000)
+                GPIO.output(SCLK_PIN, GPIO.HIGH)
+                value <<= 1
+                GPIO.output(SCLK_PIN, GPIO.LOW)
+            time.sleep(0.0001)
+
+        # Switch the GPIO pins back to input to avoid parasitic power issues
+        self._disable_gpio()
+                
+
 class Inky212x104:
 
-    def __init__(self, resolution=(104, 212), cs_pin=0, dc_pin=22, reset_pin=27, busy_pin=17, h_flip=False, v_flip=False):
+    def __init__(self, resolution=(104, 212), cs_pin=0, dc_pin=22, reset_pin=27, busy_pin=17, h_flip=False, v_flip=False, version=2):
         self.palette = (WHITE, BLACK, RED)
         self.resolution = resolution
         self.width, self.height = resolution
+
+        self.set_version(version)
 
         self.buffer = numpy.zeros((self.height, self.width), dtype=numpy.uint8)
 
@@ -83,22 +122,145 @@ class Inky212x104:
         GPIO.setup(self.reset_pin, GPIO.OUT, initial=GPIO.HIGH)
         GPIO.setup(self.busy_pin, GPIO.IN)
 
-        self._spi = spidev.SpiDev()
-        self._spi.open(0, self.cs_pin)
+        self._spi = InkySPI(mosi_pin=MOSI_PIN, sclk_pin=SCLK_PIN, cs_pin=CS0_PIN)
+        #self._spi = spidev.SpiDev()
+        #self._spi.open(0, self.cs_pin)
 
         atexit.register(self._display_exit)
+
+    def set_version(self, version):
+        if version not in (1, 2):
+            raise ValueError("Version {} is not valid!".format(version))
+
+        self.inky_version = version
+
+        if version == 1:
+            self._display_init = self._v1_init
+            self._display_update = self._v1_update
+            self._display_fini = self._v1_fini
+            return
+
+        if version == 2:
+            self._display_init = self._v2_init
+            self._display_update = self._v2_update
+            self._display_fini = self._v2_fini
+            return
 
     def _display_exit(self): 
         print("Shutting down display, please wait...")
         self._display_fini()
 
-    def _display_fini(self):
+    def _v2_fini(self):
+        pass
+
+    def _v2_update(self, buf_black, buf_red):
+        self._send_command(0x44, [0x00, 0x0c]) # Set RAM X address
+
+        # Test #1 - mess with the soft start settings
+        #                           Drive Str   | Min Off Time
+        self._send_command(0x0c, [(0b1000 << 4) | 0b1100,  # Phase 1: Default 0x8b = 0b1000 1011
+                                  (0b1010 << 4) | 0b1111,  # Phase 2: Default 0x9c = 0b1001 1110
+                                  (0b1010 << 4) | 0b0111,  # Phase 3: Default 0x96 = 0b1001 0110
+                                   0b00110000]) # Phase duration -- 00 ph 3, 00, ph 2, 00, ph 1
+        #self._send_command(0x0c, [0x8b, 0x9c, 0x96, 0x0f]) # Booster soft start control
+
+        # Test #2 - try setting internal temp sensor
+        self._send_command(0x18, 0x80)
+
+        # Gate scan start position
+        #self._send_command(0x0f, [0x22, 0x01])
+
+        # Test #4 - try setting dummy line period and gate line width to lower frame frequency
+        # See datasheet page 30
+        # Default settings are 0x30 / 0x0A for 50Hz frame frequency
+        # 50hz  = 0x30 / 0x0A
+        # 100hz = 0x25 / 0x06
+        # 150hz = 0x07 / 0x04
+        # A faster update cycle seems to produce sharper text
+        self._send_command(0x3a, 0x07) # Default 0x03 - Dummy Line Period
+        self._send_command(0x3b, 0x04) # Default 0x0A - Gate Line Width
+
+        # Test #5 - manually setting gate drive voltage
+        # For some reason this defaults to 0x19 which is documented as undefined
+        # Setting this to 0x20 causes the display to bleed into red, alarming!
+        #self._send_command(0x03, 0x20) # Gate driving voltage
+
+        self._send_command(0x45, [0x00, 0x00, 0xd3, 0x00, 0x00]) # Booster soft start
+        self._send_command(0x04, [0x2d, 0xb2, 0x22]) # Source driving voltage control
+
+        self._send_command(0x2c, 0x3c) # VCOM register, 0x3c = -1.5v?
+        self._send_command(0x3c, 0x33) # Border control
+
+        ## Send LUTs
+        self._send_command(0x32, [0xA5, 0x89, 0x10, 0x00, 0x00, 0x00, 0x00, 0xA5, 0x19, 0x80, 0x00, 0x00, 0x00, 0x00, 0xA5, 0xA9, 0x9B, 0x00, 0x00, 0x00, 0x00, 0xA5, 0xA9, 0x9B, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x0F, 0x0F, 0x0F, 0x0F, 0x02, 0x10, 0x10, 0x0A, 0x0A, 0x03, 0x08, 0x08, 0x09, 0x43, 0x07, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00]) 
+
+        self._send_command(0x2c, [0x3c, 0xb2, 0x22]) # VCOM register, again? This isn't happening in the dump
+
+        #self._send_command(0x44, [0x00, 0x0c]) # Set RAM X address
+        #self._send_command(0x45, [0x00, 0x00, 0xd3, 0x00]) # Set RAM Y address
+        self._send_command(0x4e, 0x00) # Set RAM X address counter
+        self._send_command(0x4f, [0x00, 0x00]) # Set RAM Y address counter
+
+        print("Sending {} bytes of black data".format(len(buf_black)))
+        self._send_command(0x24, buf_black)
+
+        self._send_command(0x44, [0x00, 0x0c]) # Set RAM X address
+        self._send_command(0x45, [0x00, 0x00, 0xd3, 0x00]) # Set RAM Y address
+        self._send_command(0x4e, 0x00) # Set RAM X address counter
+        self._send_command(0x4f, [0x00, 0x00]) # Set RAM Y address counter
+
+        print("Sending {} bytes of red data".format(len(buf_red)))
+        self._send_command(0x26, buf_red)
+
+
+        # Test #3 - Change display mode to 2?
+        #self._send_command(0x22, 0xcf)
+        self._send_command(0x22, 0xc7) # Display update setting
+        t_start = time.time()
+        self._send_command(0x20) # Display update activate
+        time.sleep(0.1)
+        self._busy_wait()
+        t_dur = time.time() - t_start
+        print("Duration: {}".format(t_dur))
+
+    def _v2_init(self):
+        self.reset()
+
+        self._send_command(0x74, 0x54) # Set analog control block
+        self._send_command(0x75, 0x3b) 
+
+        # Driver output control
+        self._send_command(0x01, [0xd3, 0x00, 0x00])
+
+        # Dummy line period
+        # Default value: 0b-----011
+        # See page 22 of datasheet
+        self._send_command(0x3a, 0x18)
+
+        # Gate line width
+        self._send_command(0x3b, 0x05)
+
+        # Data entry mode
+        self._send_command(0x11, 0x03)
+
+    def _v1_fini(self):
         self._busy_wait()
         self._send_command(_VCOM_DATA_INTERVAL_SETTING, [0x00])
         self._send_command(_POWER_SETTING, [0x02, 0x00, 0x00, 0x00])
         self._send_command(_POWER_OFF)
  
-    def _display_init(self):
+    def _v1_update(self, buf_black, buf_red):
+        # start black data transmission
+        self._send_command(_DATA_START_TRANSMISSION_1)
+        self._send_data(buf_black)
+
+        # start red data transmission
+        self._send_command(_DATA_START_TRANSMISSION_2)
+        self._send_data(buf_red)
+
+        self._send_command(_DISPLAY_REFRESH)
+
+    def _v1_init(self):
         self.reset()
 
         self._busy_wait()    # wait for driver to be ready to talk
@@ -204,18 +366,9 @@ class Inky212x104:
             region = numpy.flipud(region)
 
         buf_red = numpy.packbits(numpy.where(region == RED, 1, 0)).tolist()
-        buf_black = numpy.packbits(numpy.where(region == BLACK, 1, 0)).tolist()
+        buf_black = numpy.packbits(numpy.where(region == BLACK, 0, 1)).tolist()
 
-        # start black data transmission
-        self._send_command(_DATA_START_TRANSMISSION_1)
-        self._send_data(buf_black)
-
-        # start red data transmission
-        self._send_command(_DATA_START_TRANSMISSION_2)
-        self._send_data(buf_red)
-
-        self._send_command(_DISPLAY_REFRESH)
-
+        self._display_update(buf_black, buf_red)
         self._display_fini()
 
     def set_pixel(self, x, y, v):
@@ -235,19 +388,29 @@ class Inky212x104:
         time.sleep(0.1)
         GPIO.output(self.reset_pin, GPIO.HIGH)
         time.sleep(0.1)
+
+        if self.inky_version == 2:
+            self._send_command(_V2_RESET)
+
         self._busy_wait()
 
     def _spi_write(self, dc, values):
         GPIO.output(self.dc_pin, dc)
         self._spi.xfer(values)
 
-    def _send_command(self, command, data = []):
-        #print("Command {0:02x}".format(command))
+    def _send_command(self, command, data=None):
+        print("Command {0:02x}".format(command))
         self._spi_write(_SPI_COMMAND, [command])
-        if len(data) > 0:
-            self._spi_write(_SPI_DATA, data)
+        if data is not None:
+            self._send_data(data)
 
-    def _send_data(self, data = []):
-        if len(data) > 0:
-            self._spi_write(_SPI_DATA, data)
+    def _send_data(self, data):
+        if isinstance(data, int):
+            data = [data]
+        o = ""
+        for d in data:
+            o += " {0:02x}".format(d)
+        print("Data:{}".format(o))
+
+        self._spi_write(_SPI_DATA, data)
 
