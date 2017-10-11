@@ -155,17 +155,18 @@ class Inky212x104:
 
     def _v2_update(self, buf_black, buf_red):
         self._send_command(0x44, [0x00, 0x0c]) # Set RAM X address
+        self._send_command(0x45, [0x00, 0x00, 0xD3, 0x00, 0x00]) # Set RAM Y address + erroneous extra byte?
 
         # Test #1 - mess with the soft start settings
         #                           Drive Str   | Min Off Time
-        self._send_command(0x0c, [(0b1000 << 4) | 0b1100,  # Phase 1: Default 0x8b = 0b1000 1011
-                                  (0b1010 << 4) | 0b1111,  # Phase 2: Default 0x9c = 0b1001 1110
-                                  (0b1010 << 4) | 0b0111,  # Phase 3: Default 0x96 = 0b1001 0110
-                                   0b00110000]) # Phase duration -- 00 ph 3, 00, ph 2, 00, ph 1
+        # self._send_command(0x0c, [(0b1000 << 4) | 0b1100,  # Phase 1: Default 0x8b = 0b1000 1011
+        #                          (0b1010 << 4) | 0b1111,  # Phase 2: Default 0x9c = 0b1001 1110
+        #                          (0b1010 << 4) | 0b0111,  # Phase 3: Default 0x96 = 0b1001 0110
+        #                           0b00110000]) # Phase duration -- 00 ph 3, 00, ph 2, 00, ph 1
         #self._send_command(0x0c, [0x8b, 0x9c, 0x96, 0x0f]) # Booster soft start control
 
         # Test #2 - try setting internal temp sensor
-        self._send_command(0x18, 0x80)
+        # self._send_command(0x18, 0x80)
 
         # Gate scan start position
         #self._send_command(0x0f, [0x22, 0x01])
@@ -177,15 +178,15 @@ class Inky212x104:
         # 100hz = 0x25 / 0x06
         # 150hz = 0x07 / 0x04
         # A faster update cycle seems to produce sharper text
-        self._send_command(0x3a, 0x07) # Default 0x03 - Dummy Line Period
-        self._send_command(0x3b, 0x04) # Default 0x0A - Gate Line Width
+        # self._send_command(0x3a, 0x30) # Default 0x03 - Dummy Line Period
+        # self._send_command(0x3b, 0x0A) # Default 0x0A - Gate Line Width
 
         # Test #5 - manually setting gate drive voltage
         # For some reason this defaults to 0x19 which is documented as undefined
         # Setting this to 0x20 causes the display to bleed into red, alarming!
         #self._send_command(0x03, 0x20) # Gate driving voltage
 
-        self._send_command(0x45, [0x00, 0x00, 0xd3, 0x00, 0x00]) # Booster soft start
+        #self._send_command(0x45, [0x00, 0x00, 0xd3, 0x00, 0x00]) # Booster soft start
         self._send_command(0x04, [0x2d, 0xb2, 0x22]) # Source driving voltage control
 
         self._send_command(0x2c, 0x3c) # VCOM register, 0x3c = -1.5v?
@@ -194,14 +195,14 @@ class Inky212x104:
         ## Send LUTs
         self._send_command(0x32, [0xA5, 0x89, 0x10, 0x00, 0x00, 0x00, 0x00, 0xA5, 0x19, 0x80, 0x00, 0x00, 0x00, 0x00, 0xA5, 0xA9, 0x9B, 0x00, 0x00, 0x00, 0x00, 0xA5, 0xA9, 0x9B, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x0F, 0x0F, 0x0F, 0x0F, 0x02, 0x10, 0x10, 0x0A, 0x0A, 0x03, 0x08, 0x08, 0x09, 0x43, 0x07, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00]) 
 
-        self._send_command(0x2c, [0x3c, 0xb2, 0x22]) # VCOM register, again? This isn't happening in the dump
+        #self._send_command(0x2c, [0x3c, 0xb2, 0x22]) # VCOM register, again? This isn't happening in the dump
 
-        #self._send_command(0x44, [0x00, 0x0c]) # Set RAM X address
-        #self._send_command(0x45, [0x00, 0x00, 0xd3, 0x00]) # Set RAM Y address
+        self._send_command(0x44, [0x00, 0x0c]) # Set RAM X address
+        self._send_command(0x45, [0x00, 0x00, 0xd3, 0x00]) # Set RAM Y address
         self._send_command(0x4e, 0x00) # Set RAM X address counter
         self._send_command(0x4f, [0x00, 0x00]) # Set RAM Y address counter
 
-        print("Sending {} bytes of black data".format(len(buf_black)))
+        #print("Sending {} bytes of black data".format(len(buf_black)))
         self._send_command(0x24, buf_black)
 
         self._send_command(0x44, [0x00, 0x0c]) # Set RAM X address
@@ -209,7 +210,7 @@ class Inky212x104:
         self._send_command(0x4e, 0x00) # Set RAM X address counter
         self._send_command(0x4f, [0x00, 0x00]) # Set RAM Y address counter
 
-        print("Sending {} bytes of red data".format(len(buf_red)))
+        #print("Sending {} bytes of red data".format(len(buf_red)))
         self._send_command(0x26, buf_red)
 
 
@@ -227,7 +228,7 @@ class Inky212x104:
         self.reset()
 
         self._send_command(0x74, 0x54) # Set analog control block
-        self._send_command(0x75, 0x3b) 
+        self._send_command(0x75, 0x3b) # Sent by dev board but undocumented in datasheet
 
         # Driver output control
         self._send_command(0x01, [0xd3, 0x00, 0x00])
