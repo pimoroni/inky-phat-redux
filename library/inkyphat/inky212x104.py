@@ -6,6 +6,8 @@ import sys
 import time
 import atexit
 
+import spidev
+
 try:
     import RPi.GPIO as GPIO
 except ImportError:
@@ -118,19 +120,22 @@ class Inky212x104:
         self.partial_config = []
         self.border = 0b00000000
 
-        GPIO.setup(self.dc_pin, GPIO.OUT, initial=GPIO.LOW)
-        GPIO.setup(self.reset_pin, GPIO.OUT, initial=GPIO.HIGH)
-        GPIO.setup(self.busy_pin, GPIO.IN)
+        GPIO.setup(self.dc_pin, GPIO.OUT, initial=GPIO.LOW, pull_up_down=GPIO.PUD_OFF)
+        GPIO.setup(self.reset_pin, GPIO.OUT, initial=GPIO.HIGH, pull_up_down=GPIO.PUD_OFF)
+        GPIO.setup(self.busy_pin, GPIO.IN, pull_up_down=GPIO.PUD_OFF)
 
         self._spi = InkySPI(mosi_pin=MOSI_PIN, sclk_pin=SCLK_PIN, cs_pin=CS0_PIN)
         #self._spi = spidev.SpiDev()
         #self._spi.open(0, self.cs_pin)
+        #self._spi.max_speed_hz = 488000
 
         atexit.register(self._display_exit)
 
     def set_version(self, version):
         if version not in (1, 2):
             raise ValueError("Version {} is not valid!".format(version))
+
+        print("Running Inky Version: {}".format(version))
 
         self.inky_version = version
 
@@ -151,7 +156,7 @@ class Inky212x104:
         self._display_fini()
 
     def _v2_fini(self):
-        pass
+        GPIO.cleanup()
 
     def _v2_update(self, buf_black, buf_red):
         self._send_command(0x44, [0x00, 0x0c]) # Set RAM X address
@@ -193,6 +198,7 @@ class Inky212x104:
         self._send_command(0x3c, 0x33) # Border control
 
         ## Send LUTs
+        # Sandy's Manic Madness
         self._send_command(0x32, [0xA5, 0x89, 0x10, 0x00, 0x00, 0x00, 0x00, 0xA5, 0x19, 0x80, 0x00, 0x00, 0x00, 0x00, 0xA5, 0xA9, 0x9B, 0x00, 0x00, 0x00, 0x00, 0xA5, 0xA9, 0x9B, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x0F, 0x0F, 0x0F, 0x0F, 0x02, 0x10, 0x10, 0x0A, 0x0A, 0x03, 0x08, 0x08, 0x09, 0x43, 0x07, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00]) 
 
         #self._send_command(0x2c, [0x3c, 0xb2, 0x22]) # VCOM register, again? This isn't happening in the dump
@@ -379,12 +385,17 @@ class Inky212x104:
     def _busy_wait(self):
         """Wait for the e-paper driver to be ready to receive commands/data.
         """
-        while(GPIO.input(self.busy_pin) == GPIO.LOW):
+        wait_for = GPIO.HIGH
+        if self.inky_version == 2:
+            wait_for = GPIO.LOW
+        print("Busy pin {} is {}, waiting for {}".format(self.busy_pin, GPIO.input(self.busy_pin), wait_for))
+        while(GPIO.input(self.busy_pin) != wait_for):
             pass
 
     def reset(self):
         """Send a reset signal to the e-paper driver.
         """
+        print("Reset!")
         GPIO.output(self.reset_pin, GPIO.LOW)
         time.sleep(0.1)
         GPIO.output(self.reset_pin, GPIO.HIGH)
@@ -400,7 +411,7 @@ class Inky212x104:
         self._spi.xfer(values)
 
     def _send_command(self, command, data=None):
-        print("Command {0:02x}".format(command))
+        print("Command 0x{0:02x}".format(command))
         self._spi_write(_SPI_COMMAND, [command])
         if data is not None:
             self._send_data(data)
