@@ -197,22 +197,42 @@ class Inky212x104:
         self._send_command(0x2c, 0x3c) # VCOM register, 0x3c = -1.5v?
         self._send_command(0x3c, 0x33) # Border control
 
+        VSS  = 0b00
+        VSH1 = 0b01
+        VSL  = 0b10
+        VSH2 = 0b11
+        def l(a, b, c, d):
+            return (a << 6) | (b << 4) | (c << 2) | d
+
         ## Send LUTs
         # Sandy's Manic Madness
+        # 00 = VSS
+        # 01 = VSH1
+        # 10 = VSL
+        # 11 = VSH2
         self._send_command(0x32, [
-        0xA5, 0x89, 0x10, 0x10, 0x00, 0x00, 0x00, # LUT0 - Black 
-        0xA5, 0x19, 0x80, 0x00, 0x00, 0x00, 0x00, # LUT1 - White
-        0xA5, 0xA9, 0x9B, 0x9B, 0x00, 0x00, 0x00, # LUT2 - Red
-        0xA5, 0xA9, 0x9B, 0x9B, 0x00, 0x00, 0x00, # LUT3 - Red
-        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, # LUT4 - VCOM
-        # A    B     C     D     Repeat
-        0x0F, 0x0F, 0x0F, 0x0F, 0x04, # Phase 0
-        0x10, 0x10, 0x0A, 0x0A, 0x03, # 1
-        0x08, 0x08, 0x09, 0x43, 0x07, # 2
-        0x08, 0x08, 0x09, 0x43, 0x07, # 3
-        0x00, 0x00, 0x00, 0x00, 0x00, # 4
-        0x00, 0x00, 0x00, 0x00, 0x00, # 5
-        0x00, 0x00, 0x00, 0x00, 0x00  # 6
+        # Phase 0     Phase 1     Phase 2     Phase 3     Phase 4     Phase 5     Phase 6
+        # A B C D     A B C D     A B C D     A B C D     A B C D     A B C D     A B C D
+        0b10100000, 0b10001001, 0b00010000, 0b00010000, 0b00000000, 0b00000000, 0b00000000, # LUT0 - Black
+        0b10100000, 0b00011001, 0b10000000, 0b00000000, 0b00000000, 0b00000000, 0b00000000, # LUTT1 - White
+        0b00000000, 0b00000000, 0b00000000, 0b00000000, 0b00000000, 0b00000000, 0b00000000, # IGNORE
+        0b10100000, 0b10101001, 0b00000000, 0b10011011, 0b00000000, 0b00000000, 0b00000000, # LUT3 - Red
+        0b00000000, 0b00000000, 0b00000000, 0b00000000, 0b00000000, 0b00000000, 0b00000000, # LUT4 - VCOM
+        #0xA5, 0x89, 0x10, 0x10, 0x00, 0x00, 0x00, # LUT0 - Black 
+        #0xA5, 0x19, 0x80, 0x00, 0x00, 0x00, 0x00, # LUT1 - White
+        #0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, # LUT2 - Red - NADA!
+        #0xA5, 0xA9, 0x9B, 0x9B, 0x00, 0x00, 0x00, # LUT3 - Red
+        #0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, # LUT4 - VCOM
+
+#       Duration              |  Repeat
+#       A     B     C     D   |
+        16,   15,   15,   15,    4,  # Phase 0  clear?
+        0,    0,    0,   0,    0,  # 1        bring n the black
+        8,    8,    9,    67,    7,  # 2
+        8,    8,    9,    67,    10, # 3
+        0,    0,    0,    0,     0,  # 4
+        0,    0,    0,    0,     0,  # 5
+        0,    0,    0,    0,     0   # 6
         ]) 
 
         #self._send_command(0x2c, [0x3c, 0xb2, 0x22]) # VCOM register, again? This isn't happening in the dump
