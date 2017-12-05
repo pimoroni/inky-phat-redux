@@ -84,8 +84,10 @@ class InkySPI:
         for value in values:
             for bit in range(8):
                 GPIO.output(MOSI_PIN, value & 0b10000000)
+#                time.sleep(0.0001)
                 GPIO.output(SCLK_PIN, GPIO.HIGH)
                 value <<= 1
+                time.sleep(0.0001)
                 GPIO.output(SCLK_PIN, GPIO.LOW)
             time.sleep(0.0001)
 
@@ -127,7 +129,7 @@ class Inky212x104:
         self._spi = InkySPI(mosi_pin=MOSI_PIN, sclk_pin=SCLK_PIN, cs_pin=CS0_PIN)
         #self._spi = spidev.SpiDev()
         #self._spi.open(0, self.cs_pin)
-        #self._spi.max_speed_hz = 488000
+        self._spi.max_speed_hz = 488000
 
         atexit.register(self._display_exit)
 
@@ -195,7 +197,15 @@ class Inky212x104:
         self._send_command(0x04, [0x2d, 0xb2, 0x22]) # Source driving voltage control
 
         self._send_command(0x2c, 0x3c) # VCOM register, 0x3c = -1.5v?
-        self._send_command(0x3c, 0x33) # Border control
+
+        # Border control
+        self._send_command(0x3c, 0x00)
+        if self.border == 0b11000000:
+            self._send_command(0x3c, 0x00)
+        elif self.border == 0b01000000:
+            self._send_command(0x3c, 0x33)
+        elif self.border == 0b10000000:
+            self._send_command(0x3c, 0xFF)
 
         VSS  = 0b00
         VSH1 = 0b01
@@ -277,10 +287,10 @@ class Inky212x104:
         # Dummy line period
         # Default value: 0b-----011
         # See page 22 of datasheet
-        self._send_command(0x3a, 0x18)
+        self._send_command(0x3a, 0x07)
 
         # Gate line width
-        self._send_command(0x3b, 0x05)
+        self._send_command(0x3b, 0x04)
 
         # Data entry mode
         self._send_command(0x11, 0x03)
