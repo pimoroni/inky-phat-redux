@@ -7,7 +7,7 @@ except ImportError:
     exit("This script requires the pillow module\nInstall with: sudo pip install pillow")
 
 
-__version__ = '0.0.2'
+__version__ = '0.0.3'
 
 WHITE = 0
 BLACK = 1
@@ -124,7 +124,7 @@ def set_image(image, colswap=None):
                     if p in colswap.keys():
                         p = colswap[p]
                         image.putpixel((x, y), p)
-            
+
         _image.paste(image)
 
 def get_image():
