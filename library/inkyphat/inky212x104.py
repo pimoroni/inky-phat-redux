@@ -84,7 +84,7 @@ class InkySPI:
         for value in values:
             for bit in range(8):
                 GPIO.output(MOSI_PIN, value & 0b10000000)
-#                time.sleep(0.0001)
+                time.sleep(0.0001)
                 GPIO.output(SCLK_PIN, GPIO.HIGH)
                 value <<= 1
                 time.sleep(0.0001)
@@ -137,7 +137,7 @@ class Inky212x104:
         if version not in (1, 2):
             raise ValueError("Version {} is not valid!".format(version))
 
-        print("Running Inky Version: {}".format(version))
+#        print("Running Inky Version: {}".format(version))
 
         self.inky_version = version
 
@@ -154,7 +154,7 @@ class Inky212x104:
             return
 
     def _display_exit(self): 
-        print("Shutting down display, please wait...")
+#        print("Shutting down display, please wait...")
         self._display_fini()
 
     def _v2_fini(self):
@@ -270,10 +270,10 @@ class Inky212x104:
         self._send_command(0x22, 0xc7) # Display update setting
         t_start = time.time()
         self._send_command(0x20) # Display update activate
-        time.sleep(0.1)
+        time.sleep(0.05)
         self._busy_wait()
         t_dur = time.time() - t_start
-        print("Duration: {}".format(t_dur))
+#        print("Duration: {}".format(t_dur))
 
     def _v2_init(self):
         self.reset()
@@ -433,14 +433,14 @@ class Inky212x104:
         wait_for = GPIO.HIGH
         if self.inky_version == 2:
             wait_for = GPIO.LOW
-        print("Busy pin {} is {}, waiting for {}".format(self.busy_pin, GPIO.input(self.busy_pin), wait_for))
+#        print("Busy pin {} is {}, waiting for {}".format(self.busy_pin, GPIO.input(self.busy_pin), wait_for))
         while(GPIO.input(self.busy_pin) != wait_for):
             pass
 
     def reset(self):
         """Send a reset signal to the e-paper driver.
         """
-        print("Reset!")
+#        print("Reset!")
         GPIO.output(self.reset_pin, GPIO.LOW)
         time.sleep(0.1)
         GPIO.output(self.reset_pin, GPIO.HIGH)
@@ -456,7 +456,7 @@ class Inky212x104:
         self._spi.xfer(values)
 
     def _send_command(self, command, data=None):
-        print("Command 0x{0:02x}".format(command))
+#        print("Command 0x{0:02x}".format(command))
         self._spi_write(_SPI_COMMAND, [command])
         if data is not None:
             self._send_data(data)
@@ -467,7 +467,7 @@ class Inky212x104:
         o = ""
         for d in data:
             o += " {0:02x}".format(d)
-        print("Data:{}".format(o))
+ #       print("Data:{}".format(o))
 
         self._spi_write(_SPI_DATA, data)
 
