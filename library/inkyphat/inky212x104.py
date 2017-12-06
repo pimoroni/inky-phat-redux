@@ -97,12 +97,9 @@ class InkySPI:
 
 class Inky212x104:
 
-    def __init__(self, resolution=(104, 212), cs_pin=0, dc_pin=22, reset_pin=27, busy_pin=17, h_flip=False, v_flip=False, version=2):
-        self.palette = (WHITE, BLACK, RED)
+    def __init__(self, resolution=(104, 212), cs_pin=0, dc_pin=22, reset_pin=27, busy_pin=17, h_flip=False, v_flip=False):
         self.resolution = resolution
         self.width, self.height = resolution
-
-        self.set_version(version)
 
         self.buffer = numpy.zeros((self.height, self.width), dtype=numpy.uint8)
 
@@ -125,6 +122,21 @@ class Inky212x104:
         GPIO.setup(self.dc_pin, GPIO.OUT, initial=GPIO.LOW, pull_up_down=GPIO.PUD_OFF)
         GPIO.setup(self.reset_pin, GPIO.OUT, initial=GPIO.HIGH, pull_up_down=GPIO.PUD_OFF)
         GPIO.setup(self.busy_pin, GPIO.IN, pull_up_down=GPIO.PUD_OFF)
+
+        GPIO.output(self.reset_pin, GPIO.LOW)
+        time.sleep(0.1)
+        GPIO.output(self.reset_pin, GPIO.HIGH)
+        time.sleep(0.1)
+
+        if GPIO.input(self.busy_pin) == 1:
+            self.set_version(1)
+            self.palette = (BLACK, WHITE, RED)
+        elif GPIO.input(self.busy_pin) == 0:
+            self.set_version(2)
+            self.palette = (WHITE, BLACK, RED)
+        else:
+            self.set_version(2)
+            self.palette = (WHITE, BLACK, RED)
 
         self._spi = InkySPI(mosi_pin=MOSI_PIN, sclk_pin=SCLK_PIN, cs_pin=CS0_PIN)
         #self._spi = spidev.SpiDev()
@@ -418,7 +430,10 @@ class Inky212x104:
             region = numpy.flipud(region)
 
         buf_red = numpy.packbits(numpy.where(region == RED, 1, 0)).tolist()
-        buf_black = numpy.packbits(numpy.where(region == BLACK, 0, 1)).tolist()
+        if self.inky_version == 1:
+            buf_black = numpy.packbits(numpy.where(region == 0, 0, 1)).tolist()
+        else:
+            buf_black = numpy.packbits(numpy.where(region == BLACK, 0, 1)).tolist()
 
         self._display_update(buf_black, buf_red)
         self._display_fini()
