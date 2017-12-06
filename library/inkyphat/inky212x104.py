@@ -61,39 +61,6 @@ WHITE = 0
 BLACK = 1
 RED = 2
 
-class InkySPI:
-    """Software SPI implementation
-    We require low-level control of the SPI pins so they can be
-    switched back to inputs, with no pull-up or down when unused.
-    This is to prevent the display driver powering itself
-    parasitically from these pins.
-    """
-    def __init__(self, mosi_pin, sclk_pin, cs_pin):
-        self.mosi_pin = mosi_pin
-        self.sclk_pin = sclk_pin
-        self.cs_pin = cs_pin
-        self._disable_gpio()
-
-    def _disable_gpio(self):
-        GPIO.setup((self.mosi_pin, self.sclk_pin, self.cs_pin), GPIO.IN, pull_up_down=GPIO.PUD_OFF)
-
-    def xfer(self, values):
-        #print("Sending: {}".format(values))
-        GPIO.setup((self.mosi_pin, self.sclk_pin, self.cs_pin), GPIO.OUT)
-
-        for value in values:
-            for bit in range(8):
-                GPIO.output(MOSI_PIN, value & 0b10000000)
-                time.sleep(0.0001)
-                GPIO.output(SCLK_PIN, GPIO.HIGH)
-                value <<= 1
-                time.sleep(0.0001)
-                GPIO.output(SCLK_PIN, GPIO.LOW)
-            time.sleep(0.0001)
-
-        # Switch the GPIO pins back to input to avoid parasitic power issues
-        self._disable_gpio()
-
 class Inky212x104:
 
     def __init__(self, resolution=(104, 212), cs_pin=CS0_PIN, dc_pin=DC_PIN, reset_pin=RESET_PIN, busy_pin=BUSY_PIN, h_flip=False, v_flip=False):
@@ -137,7 +104,6 @@ class Inky212x104:
             self.set_version(2)
             self.palette = (WHITE, BLACK, RED)
 
-        #self._spi = InkySPI(mosi_pin=MOSI_PIN, sclk_pin=SCLK_PIN, cs_pin=CS0_PIN)
         self._spi = spidev.SpiDev()
         self._spi.open(0, self.cs_pin)
         self._spi.max_speed_hz = 488000
@@ -147,8 +113,6 @@ class Inky212x104:
     def set_version(self, version):
         if version not in (1, 2):
             raise ValueError("Version {} is not valid!".format(version))
-
-#        print("Running Inky Version: {}".format(version))
 
         self.inky_version = version
 
@@ -164,8 +128,7 @@ class Inky212x104:
             self._display_fini = self._v2_fini
             return
 
-    def _display_exit(self): 
-#        print("Shutting down display, please wait...")
+    def _display_exit(self):
         self._display_fini()
 
     def _v2_fini(self):
@@ -175,36 +138,6 @@ class Inky212x104:
         self._send_command(0x44, [0x00, 0x0c]) # Set RAM X address
         self._send_command(0x45, [0x00, 0x00, 0xD3, 0x00, 0x00]) # Set RAM Y address + erroneous extra byte?
 
-        # Test #1 - mess with the soft start settings
-        #                           Drive Str   | Min Off Time
-        # self._send_command(0x0c, [(0b1000 << 4) | 0b1100,  # Phase 1: Default 0x8b = 0b1000 1011
-        #                          (0b1010 << 4) | 0b1111,  # Phase 2: Default 0x9c = 0b1001 1110
-        #                          (0b1010 << 4) | 0b0111,  # Phase 3: Default 0x96 = 0b1001 0110
-        #                           0b00110000]) # Phase duration -- 00 ph 3, 00, ph 2, 00, ph 1
-        #self._send_command(0x0c, [0x8b, 0x9c, 0x96, 0x0f]) # Booster soft start control
-
-        # Test #2 - try setting internal temp sensor
-        # self._send_command(0x18, 0x80)
-
-        # Gate scan start position
-        #self._send_command(0x0f, [0x22, 0x01])
-
-        # Test #4 - try setting dummy line period and gate line width to lower frame frequency
-        # See datasheet page 30
-        # Default settings are 0x30 / 0x0A for 50Hz frame frequency
-        # 50hz  = 0x30 / 0x0A
-        # 100hz = 0x25 / 0x06
-        # 150hz = 0x07 / 0x04
-        # A faster update cycle seems to produce sharper text
-        # self._send_command(0x3a, 0x07) # Default 0x03 - Dummy Line Period
-        # self._send_command(0x3b, 0x04) # Default 0x0A - Gate Line Width
-
-        # Test #5 - manually setting gate drive voltage
-        # For some reason this defaults to 0x19 which is documented as undefined
-        # Setting this to 0x20 causes the display to bleed into red, alarming!
-        #self._send_command(0x03, 0x20) # Gate driving voltage
-
-        #self._send_command(0x45, [0x00, 0x00, 0xd3, 0x00, 0x00]) # Booster soft start
         self._send_command(0x04, [0x2d, 0xb2, 0x22]) # Source driving voltage control
 
         self._send_command(0x2c, 0x3c) # VCOM register, 0x3c = -1.5v?
@@ -226,11 +159,6 @@ class Inky212x104:
             return (a << 6) | (b << 4) | (c << 2) | d
 
         ## Send LUTs
-        # Sandy's Manic Madness
-        # 00 = VSS
-        # 01 = VSH1
-        # 10 = VSL
-        # 11 = VSH2
         self._send_command(0x32, [
         # Phase 0     Phase 1     Phase 2     Phase 3     Phase 4     Phase 5     Phase 6
         # A B C D     A B C D     A B C D     A B C D     A B C D     A B C D     A B C D
@@ -239,7 +167,7 @@ class Inky212x104:
         0b00000000, 0b00000000, 0b00000000, 0b00000000, 0b00000000, 0b00000000, 0b00000000,# 0b00000000, # IGNORE
         0b01001000, 0b10100101, 0b00000000, 0b10111011, 0b00000000, 0b00000000, 0b00000000,# 0b00000000, # LUT3 - Red
         0b00000000, 0b00000000, 0b00000000, 0b00000000, 0b00000000, 0b00000000, 0b00000000,# 0b00000000, # LUT4 - VCOM
-        #0xA5, 0x89, 0x10, 0x10, 0x00, 0x00, 0x00, # LUT0 - Black 
+        #0xA5, 0x89, 0x10, 0x10, 0x00, 0x00, 0x00, # LUT0 - Black
         #0xA5, 0x19, 0x80, 0x00, 0x00, 0x00, 0x00, # LUT1 - White
         #0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, # LUT2 - Red - NADA!
         #0xA5, 0xA9, 0x9B, 0x9B, 0x00, 0x00, 0x00, # LUT3 - Red
@@ -249,22 +177,20 @@ class Inky212x104:
 #       A     B     C     D   |
         67,   10,   31,   10,    4,  # 0 Flash
         16,   8,    4,    4,     6,  # 1 clear
-        8,    8,    8,    64,    16,  # 2 bring in the black
-        4,    4,    4,    64,    32, # 3 time for red
-        6,    6,    4,    8,     2,  # 4 final black sharpen phase
+        4,    8,    8,    32,    16,  # 2 bring in the black
+        4,    8,    8,    64,    32, # 3 time for red
+        6,    6,    6,    2,     2,  # 4 final black sharpen phase
+        0,    0,    0,    0,     0,  # 4
         0,    0,    0,    0,     0,  # 5
         0,    0,    0,    0,     0,  # 6
         0,    0,    0,    0,     0   # 7
-        ]) 
-
-        #self._send_command(0x2c, [0x3c, 0xb2, 0x22]) # VCOM register, again? This isn't happening in the dump
+        ])
 
         self._send_command(0x44, [0x00, 0x0c]) # Set RAM X address
         self._send_command(0x45, [0x00, 0x00, 0xd3, 0x00]) # Set RAM Y address
         self._send_command(0x4e, 0x00) # Set RAM X address counter
         self._send_command(0x4f, [0x00, 0x00]) # Set RAM Y address counter
 
-        #print("Sending {} bytes of black data".format(len(buf_black)))
         self._send_command(0x24, buf_black)
 
         self._send_command(0x44, [0x00, 0x0c]) # Set RAM X address
@@ -272,19 +198,13 @@ class Inky212x104:
         self._send_command(0x4e, 0x00) # Set RAM X address counter
         self._send_command(0x4f, [0x00, 0x00]) # Set RAM Y address counter
 
-        #print("Sending {} bytes of red data".format(len(buf_red)))
         self._send_command(0x26, buf_red)
 
 
-        # Test #3 - Change display mode to 2?
-        #self._send_command(0x22, 0xcf)
         self._send_command(0x22, 0xc7) # Display update setting
-#        t_start = time.time()
         self._send_command(0x20) # Display update activate
         time.sleep(0.05)
         self._busy_wait()
-#        t_dur = time.time() - t_start
-#        print("Duration: {}".format(t_dur))
 
     def _v2_init(self):
         self.reset()
@@ -311,13 +231,13 @@ class Inky212x104:
         self._send_command(_VCOM_DATA_INTERVAL_SETTING, [0x00])
         self._send_command(_POWER_SETTING, [0x02, 0x00, 0x00, 0x00])
         self._send_command(_POWER_OFF)
- 
+
     def _v1_update(self, buf_black, buf_red):
-        # start black data transmission
+        # Start black data transmission
         self._send_command(_DATA_START_TRANSMISSION_1)
         self._send_data(buf_black)
 
-        # start red data transmission
+        # Start red data transmission
         self._send_command(_DATA_START_TRANSMISSION_2)
         self._send_data(buf_red)
 
@@ -326,13 +246,13 @@ class Inky212x104:
     def _v1_init(self):
         self.reset()
 
-        self._busy_wait()    # wait for driver to be ready to talk
+        self._busy_wait()    # Wait for driver to be ready to talk
 
         self._send_command(_POWER_SETTING, [0x07, 0x00, 0x0A, 0x00])
         self._send_command(_BOOSTER_SOFT_START, [0x07, 0x07, 0x07])
         self._send_command(_POWER_ON)
 
-        self._busy_wait()    # wait for driver to be ready to talk
+        self._busy_wait()    # Wait for driver to be ready to talk
 
         self._send_command(_PANEL_SETTING, [0b11001111])
         self._send_command(_VCOM_DATA_INTERVAL_SETTING, [0b00000111 | self.border]) # Set border to white by default
@@ -447,14 +367,13 @@ class Inky212x104:
         wait_for = GPIO.HIGH
         if self.inky_version == 2:
             wait_for = GPIO.LOW
-#        print("Busy pin {} is {}, waiting for {}".format(self.busy_pin, GPIO.input(self.busy_pin), wait_for))
+
         while(GPIO.input(self.busy_pin) != wait_for):
             pass
 
     def reset(self):
         """Send a reset signal to the e-paper driver.
         """
-#        print("Reset!")
         GPIO.output(self.reset_pin, GPIO.LOW)
         time.sleep(0.1)
         GPIO.output(self.reset_pin, GPIO.HIGH)
@@ -470,7 +389,6 @@ class Inky212x104:
         self._spi.xfer(values)
 
     def _send_command(self, command, data=None):
-#        print("Command 0x{0:02x}".format(command))
         self._spi_write(_SPI_COMMAND, [command])
         if data is not None:
             self._send_data(data)
@@ -481,7 +399,6 @@ class Inky212x104:
         o = ""
         for d in data:
             o += " {0:02x}".format(d)
- #       print("Data:{}".format(o))
 
         self._spi_write(_SPI_DATA, data)
 
