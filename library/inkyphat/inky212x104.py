@@ -20,11 +20,11 @@ except ImportError:
 
 RESET_PIN = 27
 BUSY_PIN = 17
-DC_PIN = 12
+DC_PIN = 22
 
 MOSI_PIN = 10
 SCLK_PIN = 11
-CS0_PIN = 8
+CS0_PIN = 0
 
 GPIO.setmode(GPIO.BCM)
 GPIO.setwarnings(False)
@@ -75,7 +75,7 @@ class InkySPI:
         self._disable_gpio()
 
     def _disable_gpio(self):
-        GPIO.setup((self.mosi_pin, self.sclk_pin, self.cs_pin), GPIO.IN, pull_up_down=GPIO.PUD_OFF)         
+        GPIO.setup((self.mosi_pin, self.sclk_pin, self.cs_pin), GPIO.IN, pull_up_down=GPIO.PUD_OFF)
 
     def xfer(self, values):
         #print("Sending: {}".format(values))
@@ -93,11 +93,10 @@ class InkySPI:
 
         # Switch the GPIO pins back to input to avoid parasitic power issues
         self._disable_gpio()
-                
 
 class Inky212x104:
 
-    def __init__(self, resolution=(104, 212), cs_pin=0, dc_pin=22, reset_pin=27, busy_pin=17, h_flip=False, v_flip=False):
+    def __init__(self, resolution=(104, 212), cs_pin=CS0_PIN, dc_pin=DC_PIN, reset_pin=RESET_PIN, busy_pin=BUSY_PIN, h_flip=False, v_flip=False):
         self.resolution = resolution
         self.width, self.height = resolution
 
@@ -138,9 +137,9 @@ class Inky212x104:
             self.set_version(2)
             self.palette = (WHITE, BLACK, RED)
 
-        self._spi = InkySPI(mosi_pin=MOSI_PIN, sclk_pin=SCLK_PIN, cs_pin=CS0_PIN)
-        #self._spi = spidev.SpiDev()
-        #self._spi.open(0, self.cs_pin)
+        #self._spi = InkySPI(mosi_pin=MOSI_PIN, sclk_pin=SCLK_PIN, cs_pin=CS0_PIN)
+        self._spi = spidev.SpiDev()
+        self._spi.open(0, self.cs_pin)
         self._spi.max_speed_hz = 488000
 
         atexit.register(self._display_exit)
@@ -249,10 +248,10 @@ class Inky212x104:
 #       Duration              |  Repeat
 #       A     B     C     D   |
         67,   10,   31,   10,    4,  # 0 Flash
-        8,    8,    4,    4,     8,  # 1 clear
-        8,    8,    8,    32,    10,  # 2 bring in the black
-        8,    8,    4,    66,    38, # 3 time for red
-        6,    6,    2,    2,     0,  # 4 final black sharpen phase
+        16,   8,    4,    4,     6,  # 1 clear
+        8,    8,    8,    64,    16,  # 2 bring in the black
+        4,    4,    4,    64,    32, # 3 time for red
+        6,    6,    4,    8,     2,  # 4 final black sharpen phase
         0,    0,    0,    0,     0,  # 5
         0,    0,    0,    0,     0,  # 6
         0,    0,    0,    0,     0   # 7
@@ -280,11 +279,11 @@ class Inky212x104:
         # Test #3 - Change display mode to 2?
         #self._send_command(0x22, 0xcf)
         self._send_command(0x22, 0xc7) # Display update setting
-        t_start = time.time()
+#        t_start = time.time()
         self._send_command(0x20) # Display update activate
         time.sleep(0.05)
         self._busy_wait()
-        t_dur = time.time() - t_start
+#        t_dur = time.time() - t_start
 #        print("Duration: {}".format(t_dur))
 
     def _v2_init(self):
