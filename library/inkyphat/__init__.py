@@ -32,6 +32,9 @@ for method in ["arc", "bitmap", "chord", "draw", "ellipse", "fill", "font", "fon
 for method in ["paste", "putpixel", "getpixel"]:
     globals()[method] = getattr(_image, method)
 
+def get_version():
+    return _panel.inky_version
+
 def set_partial_mode(x1,x2,y1,y2):
     _panel.set_partial_mode(y1,y2,x1,x2)
 

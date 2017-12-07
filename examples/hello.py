@@ -22,6 +22,11 @@ if len(sys.argv) < 2:
 inkyphat.set_border(inkyphat.RED)
 inkyphat.set_image("resources/hello-badge.png")
 
+# Partial update if using Inky pHAT display v1
+
+if inkyphat.get_version() == 1:
+    inkyphat.show()
+
 # Add the text
 
 font = ImageFont.truetype(inkyphat.fonts.AmaticSCBold, 38)
@@ -36,5 +41,10 @@ x = (inkyphat.WIDTH / 2) - (w / 2)
 y = 71 - (h / 2)
 
 inkyphat.text((x, y), name, inkyphat.BLACK, font)
+
+# Partial update if using Inky pHAT display v1
+
+if inkyphat.get_version() == 1:
+    inkyphat.set_partial_mode(56, 96, 0, inkyphat.WIDTH)
 
 inkyphat.show()

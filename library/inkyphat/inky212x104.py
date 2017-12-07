@@ -268,56 +268,63 @@ class Inky212x104:
             self._send_command(_PARTIAL_EXIT)
 
     def clear_partial_mode(self):
-        self.partial_mode = False
-        self.update_x1 = 0
-        self.update_x2 = self.width
-        self.update_y1 = 0
-        self.update_y2 = self.height
+        if self.inky_version == 1:
+            self.partial_mode = False
+            self.update_x1 = 0
+            self.update_x2 = self.width
+            self.update_y1 = 0
+            self.update_y2 = self.height
+        else:
+            raise ValueError("This Inky pHAT display does not support partial updates")
 
     def set_partial_mode(self, vr_st, vr_ed, hr_st, hr_ed):
-        self.partial_mode = True
-        self.update_x1 = (hr_st // 8) * 8 # Snap update region to byte boundary
-        self.update_x2 = (hr_ed // 8) * 8
-        self.update_y1 = vr_st
-        self.update_y2 = vr_ed
+        if self.inky_version == 1:
+            self.partial_mode = True
+            self.update_x1 = (hr_st // 8) * 8 # Snap update region to byte boundary
+            self.update_x2 = (hr_ed // 8) * 8
+            self.update_y1 = vr_st
+            self.update_y2 = vr_ed
 
-        hr_ed -= 1
-        vr_ed -= 1
+            hr_ed -= 1
+            vr_ed -= 1
 
-        hr_st //= 8
-        hr_ed //= 8
+            hr_st //= 8
+            hr_ed //= 8
 
-        if self.v_flip:
-            _hr_st = ((self.width - 1) // 8) - hr_ed
-            _hr_ed = ((self.width - 1) // 8) - hr_st
-            hr_st = _hr_st
-            hr_ed = _hr_ed
+            if self.v_flip:
+                _hr_st = ((self.width - 1) // 8) - hr_ed
+                _hr_ed = ((self.width - 1) // 8) - hr_st
+                hr_st = _hr_st
+                hr_ed = _hr_ed
 
-        if self.h_flip:
-            _vr_st = self.height - 1 - vr_ed
-            _vr_ed = self.height - 1 - vr_st
-            vr_st = _vr_st
-            vr_ed = _vr_ed
+            if self.h_flip:
+                _vr_st = self.height - 1 - vr_ed
+                _vr_ed = self.height - 1 - vr_st
+                vr_st = _vr_st
+                vr_ed = _vr_ed
 
-        # vr_st - vr_ed = 0 - 212 - Actually horizontal on Inky pHAT
-        # hr_st - hr_ed = 0 - 12 - Actually vertical on Inky pHAT in 13 slices of 8 vertical pixels
+            # vr_st - vr_ed = 0 - 212 - Actually horizontal on Inky pHAT
+            # hr_st - hr_ed = 0 - 12 - Actually vertical on Inky pHAT in 13 slices of 8 vertical pixels
 
-        self.partial_config = [
-                                                     # D7   D6   D5   D4   D3   D2   D1   D0
-            0b00000000 | (hr_st & 0b11111) << 3,     #    HRST[7:3]             0    0    0
-            0b00000111 | (hr_ed & 0b11111) << 3,     #    HRED[7:3]             1    1    1
-            0b00000000 | (vr_st & 0b100000000) >> 8, # -    -    -    -    -    -    -   VRST[8]
-            0b00000000 | (vr_st & 0b11111111),       #                VRST[7:0]
-            0b00000000 | (vr_ed & 0b100000000) >> 8, # -    -    -    -    -    -    -   VRED[8]
-            0b00000000 | (vr_ed & 0b11111111),       #                VRED[7:0]
-            0b00000001,                              # -    -    -    -    -    -    -   PT_SCAN
-        ]
+            self.partial_config = [
+                                                         # D7   D6   D5   D4   D3   D2   D1   D0
+                0b00000000 | (hr_st & 0b11111) << 3,     #    HRST[7:3]             0    0    0
+                0b00000111 | (hr_ed & 0b11111) << 3,     #    HRED[7:3]             1    1    1
+                0b00000000 | (vr_st & 0b100000000) >> 8, # -    -    -    -    -    -    -   VRST[8]
+                0b00000000 | (vr_st & 0b11111111),       #                VRST[7:0]
+                0b00000000 | (vr_ed & 0b100000000) >> 8, # -    -    -    -    -    -    -   VRED[8]
+                0b00000000 | (vr_ed & 0b11111111),       #                VRED[7:0]
+                0b00000001,                              # -    -    -    -    -    -    -   PT_SCAN
+            ]
 
-        # HRST: Horizontal start channel bank: 00h to 13h (0 to 19)
-        # HRED: Horizontal end channel bank: 00h to 13h (0 to 19), HRED must be greater than HRST
-        # VRST: Vertical start line: 000h to 127h (0 to 295)
-        # VRED: Vertical end line: 000h to 127h (0 to 295)
-        # PT_SCAN: 0 = Only in partial window, 1 = inside and outside of partial window
+            # HRST: Horizontal start channel bank: 00h to 13h (0 to 19)
+            # HRED: Horizontal end channel bank: 00h to 13h (0 to 19), HRED must be greater than HRST
+            # VRST: Vertical start line: 000h to 127h (0 to 295)
+            # VRED: Vertical end line: 000h to 127h (0 to 295)
+            # PT_SCAN: 0 = Only in partial window, 1 = inside and outside of partial window
+
+        else:
+            raise ValueError("This Inky pHAT display does not support partial updates")
 
     def set_border(self, border):
         if border in self.palette:
